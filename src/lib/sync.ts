@@ -1,7 +1,7 @@
 // Server-only. Copies Spotify data into Postgres so pages and the LLM read from the DB.
 // See docs/agents/sync.md
 import { createHash } from "node:crypto";
-import { and, desc, eq, gte, isNull, lt, or, sql } from "drizzle-orm";
+import { and, desc, eq, gte, isNotNull, isNull, lt, or, sql } from "drizzle-orm";
 import { db, plays, spotifySnapshots, users, type NowPlaying, type StoredTrack } from "@/db";
 import {
   spotify,
@@ -207,9 +207,11 @@ export async function refreshNowPlaying(userId: string, { force = false } = {}):
     .update(users)
     .set({ nowPlayingAt: new Date() })
     .where(
-      force
-        ? eq(users.id, userId)
-        : and(eq(users.id, userId), or(isNull(users.nowPlayingAt), lt(users.nowPlayingAt, staleBefore))),
+      and(
+        eq(users.id, userId),
+        isNotNull(users.refreshToken), // no token (e.g. demo users): nothing to refresh
+        force ? undefined : or(isNull(users.nowPlayingAt), lt(users.nowPlayingAt, staleBefore)),
+      ),
     )
     .returning({ id: users.id });
   if (!claimed.length) return;
@@ -223,6 +225,8 @@ export async function refreshNowPlaying(userId: string, { force = false } = {}):
     await db.update(users).set({ nowPlaying }).where(eq(users.id, userId));
   } catch (err) {
     console.error(`[sync] ${userId} now_playing:`, err instanceof Error ? err.message : err);
+    // nowPlayingAt was already bumped by the claim, so don't leave an old track looking fresh.
+    await db.update(users).set({ nowPlaying: null }).where(eq(users.id, userId));
   }
 }
 
@@ -256,18 +260,20 @@ export async function getRecentPlays(userId: string, limit = 50) {
     .where(eq(plays.userId, userId))
     .orderBy(desc(plays.playedAt))
     .limit(limit);
-  return rows.map((p) => ({
-    playedAt: p.playedAt,
-    track: {
-      id: p.trackId,
-      name: p.trackName,
-      explicit: p.explicit,
-      duration_ms: p.durationMs ?? 0,
-      artists: p.artistIds.map((id, i) => ({ id, name: p.artistNames[i] ?? "" })),
-      album: { name: p.albumName ?? "", images: p.imageUrl ? [{ url: p.imageUrl, width: null, height: null }] : [] },
-      external_urls: { spotify: `https://open.spotify.com/track/${p.trackId}` },
-    } satisfies StoredTrack,
-  }));
+  return rows.map((p) => ({ playedAt: p.playedAt, track: playToTrack(p) }));
+}
+
+/** Maps a `plays` row back to the track shape the UI renders. */
+export function playToTrack(p: typeof plays.$inferSelect): StoredTrack {
+  return {
+    id: p.trackId,
+    name: p.trackName,
+    explicit: p.explicit,
+    duration_ms: p.durationMs ?? 0,
+    artists: p.artistIds.map((id, i) => ({ id, name: p.artistNames[i] ?? "" })),
+    album: { name: p.albumName ?? "", images: p.imageUrl ? [{ url: p.imageUrl, width: null, height: null }] : [] },
+    external_urls: { spotify: `https://open.spotify.com/track/${p.trackId}` },
+  };
 }
 
 /**

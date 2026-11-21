@@ -2,6 +2,7 @@ import { connection } from "next/server";
 import { Suspense } from "react";
 import { auth } from "@/auth";
 import { AppHeader } from "@/components/app-header";
+import { BottomNav } from "@/components/bottom-nav";
 import { Skeleton } from "@/components/skeleton";
 import { connectSpotify } from "./actions";
 import { Summary } from "./summary";
@@ -46,11 +47,12 @@ async function Account() {
   const { name, image, id } = session.user;
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-6 pb-12">
       <AppHeader name={name} image={image} />
       <Suspense fallback={<Skeleton />}>
         <Summary userId={id} />
       </Suspense>
+      <BottomNav />
     </div>
   );
 }

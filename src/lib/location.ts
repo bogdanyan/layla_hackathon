@@ -1,10 +1,14 @@
-import { and, between, eq, gt, ne } from "drizzle-orm";
-import { db, users } from "@/db";
+import { and, between, eq, gt, inArray, ne } from "drizzle-orm";
+import { db, users, type NowPlaying } from "@/db";
 
 // Approximate location: coords are snapped to a 0.01° grid (~1.1 km) before
 // storage, and other users only ever see a distance bucket, never coordinates.
 
 export const LOCATION_TTL_MS = 24 * 60 * 60 * 1000;
+
+/** Radius options on the Listening screen. */
+export const RADII_KM = [1, 5, 10, 25] as const;
+export const DEFAULT_RADIUS_KM = 5;
 
 export function roundCoord(n: number) {
   return Math.round(n * 100) / 100;
@@ -35,7 +39,16 @@ export async function clearLocation(userId: string) {
     .where(eq(users.id, userId));
 }
 
-function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number) {
+/** True if the user shared a location within the last 24h. */
+export async function isSharingLocation(userId: string) {
+  const [me] = await db
+    .select({ at: users.locationUpdatedAt })
+    .from(users)
+    .where(eq(users.id, userId));
+  return !!me?.at && me.at.getTime() > Date.now() - LOCATION_TTL_MS;
+}
+
+export function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number) {
   const rad = Math.PI / 180;
   const dLat = (lat2 - lat1) * rad;
   const dLng = (lng2 - lng1) * rad;
@@ -49,7 +62,9 @@ function distanceLabel(km: number) {
   if (km < 1.5) return "< 1 km";
   if (km < 3.5) return "~2 km";
   if (km < 7.5) return "~5 km";
-  return "~10 km";
+  if (km < 15) return "~10 km";
+  if (km < 40) return "~25 km";
+  return "far away";
 }
 
 export type NearbyUser = {
@@ -57,6 +72,8 @@ export type NearbyUser = {
   displayName: string | null;
   imageUrl: string | null;
   distanceLabel: string;
+  nowPlaying: NowPlaying | null;
+  nowPlayingAt: Date | null;
 };
 
 /** Users who shared a location in the last 24h within `radiusKm`, closest first. */
@@ -75,6 +92,8 @@ export async function getNearbyUsers(userId: string, radiusKm = 10): Promise<Nea
       userId: users.id,
       displayName: users.displayName,
       imageUrl: users.imageUrl,
+      nowPlaying: users.nowPlaying,
+      nowPlayingAt: users.nowPlayingAt,
       lat: users.lat,
       lng: users.lng,
     })
@@ -92,10 +111,34 @@ export async function getNearbyUsers(userId: string, radiusKm = 10): Promise<Nea
     .map((r) => ({ ...r, km: haversineKm(me.lat!, me.lng!, r.lat!, r.lng!) }))
     .filter((r) => r.km <= radiusKm)
     .sort((a, b) => a.km - b.km)
-    .map(({ userId, displayName, imageUrl, km }) => ({
+    .map(({ userId, displayName, imageUrl, nowPlaying, nowPlayingAt, km }) => ({
       userId,
       displayName,
       imageUrl,
+      nowPlaying: nowPlaying ?? null,
+      nowPlayingAt,
       distanceLabel: distanceLabel(km),
     }));
+}
+
+/** Distance bucket from the viewer to each of `ids`, for users (and a viewer) sharing a location in the last 24h. */
+export async function getDistanceLabels(viewerId: string, ids: string[]): Promise<Map<string, string>> {
+  const out = new Map<string, string>();
+  if (!ids.length) return out;
+  const rows = await db
+    .select({ id: users.id, lat: users.lat, lng: users.lng })
+    .from(users)
+    .where(
+      and(
+        inArray(users.id, [viewerId, ...ids]),
+        gt(users.locationUpdatedAt, new Date(Date.now() - LOCATION_TTL_MS)),
+      ),
+    );
+  const me = rows.find((r) => r.id === viewerId);
+  if (me?.lat == null || me.lng == null) return out;
+  for (const r of rows) {
+    if (r.id === viewerId || r.lat == null || r.lng == null) continue;
+    out.set(r.id, distanceLabel(haversineKm(me.lat, me.lng, r.lat, r.lng)));
+  }
+  return out;
 }

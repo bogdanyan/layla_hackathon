@@ -1,6 +1,6 @@
 # Summary & Vibe page (MVP 1)
 
-`/` (signed in) shows the user's vibe, a listener profile, this week's stats, trends, "on repeat", top artists, a concerts placeholder and a Share-to-story button. The raw synced data lives at `/data`.
+`/` (signed in) shows the user's vibe, a listener profile, this week's stats, trends, "on repeat", top artists, upcoming concerts and a Share-to-story button. The raw synced data lives at `/data`.
 
 ## Principle: numbers from code, words from the LLM
 - `src/lib/summary.ts` → `getSummaryFacts(userId)` computes **every number shown**: this week vs. last week (plays, minutes, top artists/tracks from `plays`), peak time of day in the user's timezone, plus from Spotify's top-list snapshots: `newDiscoveries` (4-week top only), `staples` (in all ranges), `rising`, and `likedThisWeek`.
@@ -23,7 +23,7 @@ The schema is kept plain because structured outputs support only a JSON Schema s
 - Old names `refreshVibe` / `getLatestVibe` are kept as aliases.
 
 ## Page (`src/app/summary.tsx`)
-The page is a stack of **4 shareable cards**, each with a Share button and a matching story image, followed by the Concerts placeholder:
+The page is a stack of **4 shareable cards**, each with a Share button and a matching story image, followed by the Concerts section:
 
 | Card | Content | Source |
 |---|---|---|
@@ -47,4 +47,4 @@ The page is a stack of **4 shareable cards**, each with a Share button and a mat
 `users.timezone` is set by `<TimezoneSync />`, which calls the `setTimezone` server action in `src/app/actions.ts` with the browser's IANA zone. The first time it's set, the summary is regenerated so the "peak time" uses local hours. `getListeningStats` groups by hour in that timezone (UTC when unknown).
 
 ## Concerts
-Placeholder card only ("coming soon", with top 3 artists). To make it real, fetch events for `facts.topArtists4Weeks` from a concerts API (e.g. Ticketmaster Discovery) in a new `src/lib/concerts.ts`. **Never** ask the LLM for concerts.
+Upcoming shows for the top artists via SeatGeek (Ticketmaster fallback): near the user (100 km, else 1500 km) if they share a location, else anywhere. See [concerts.md](concerts.md). **Never** ask the LLM for concerts.

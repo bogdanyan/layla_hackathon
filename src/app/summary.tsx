@@ -4,9 +4,11 @@ import { cache, Suspense, type ReactNode } from "react";
 import { NowPlaying } from "@/components/now-playing";
 import { ShareStory } from "@/components/share-story";
 import { TimezoneSync } from "@/components/timezone-sync";
-import { Img } from "@/components/track-row";
+import { ShareLocation } from "@/components/share-location";
+import { Empty, Img, Row } from "@/components/track-row";
 import { db, users } from "@/db";
 import { albumArt, cardGradient, type CardKind } from "@/lib/cards";
+import { concertsEnabled, getConcerts, type ConcertScope, type Near } from "@/lib/concerts";
 import { timeAgo } from "@/lib/format";
 import { getSummaryFacts, type SummaryFacts } from "@/lib/summary";
 import { ensureFresh, getLatestSummary, getOrCreateSummary, type Summary as SummaryData } from "@/lib/vibe";
@@ -24,7 +26,13 @@ export async function Summary({ userId }: { userId: string }) {
   const [facts, [user], cached] = await Promise.all([
     getSummaryFacts(userId),
     db
-      .select({ timezone: users.timezone, nowPlaying: users.nowPlaying, lastSyncedAt: users.lastSyncedAt })
+      .select({
+        timezone: users.timezone,
+        nowPlaying: users.nowPlaying,
+        lastSyncedAt: users.lastSyncedAt,
+        lat: users.lat,
+        lng: users.lng,
+      })
       .from(users)
       .where(eq(users.id, userId)),
     getLatestSummary(userId), // DB only: lets the (instant) week card use the vibe colors when they exist
@@ -50,7 +58,9 @@ export async function Summary({ userId }: { userId: string }) {
       </Suspense>
 
       <div className="mt-4">
-        <Concerts facts={facts} />
+        <Suspense fallback={<ConcertsSkeleton />}>
+          <Concerts facts={facts} near={user?.lat != null && user?.lng != null ? { lat: user.lat, lng: user.lng } : null} />
+        </Suspense>
       </div>
 
       <footer className="mt-2 flex flex-col items-center gap-3 text-xs opacity-60">
@@ -267,7 +277,71 @@ function CardSkeleton({ label, tall }: { label: string; tall?: boolean }) {
 
 // ---------- plain sections ----------
 
-function Concerts({ facts }: { facts: SummaryFacts }) {
+/** Upcoming shows for the 4-week top artists (Ticketmaster). Near the user if they share a location. */
+async function Concerts({ facts, near }: { facts: SummaryFacts; near: Near | null }) {
+  if (!concertsEnabled()) return <ConcertsPlaceholder facts={facts} />;
+  // Favourite artists, most-loved first: last 4 weeks, then 6 months, then a year (deduped).
+  const seen = new Set<string>();
+  const artists = [...facts.topArtists4Weeks, ...facts.topArtists6Months, ...facts.topArtists1Year].filter(
+    (a) => !seen.has(a.id) && seen.add(a.id),
+  );
+  const { concerts, scope } = await getConcerts(artists, near);
+
+  return (
+    <Section title="Concerts" note={concerts.length ? SCOPE_NOTE[scope] : undefined}>
+      {concerts.length ? (
+        <ul className="flex flex-col">
+          {concerts.map((c) => (
+            <Row
+              key={c.id}
+              href={c.url}
+              images={c.artistImages}
+              round
+              title={c.artist}
+              subtitle={[c.venue, [c.city, scope === "nearby" ? null : c.country].filter(Boolean).join(", ")]
+                .filter(Boolean)
+                .join(" · ")}
+              right={formatDate(new Date(`${c.date}T12:00:00`))}
+            />
+          ))}
+        </ul>
+      ) : (
+        <Empty>
+          {near
+            ? "No upcoming shows by your favourite artists near you yet."
+            : "No upcoming shows by your favourite artists right now."}
+        </Empty>
+      )}
+      {!near && (
+        <div className="flex flex-col gap-2 rounded-2xl bg-current/5 p-4 text-xs">
+          <p className="opacity-70">Share your rough location to see shows near you.</p>
+          <ShareLocation />
+        </div>
+      )}
+    </Section>
+  );
+}
+
+const SCOPE_NOTE: Record<ConcertScope, string> = {
+  nearby: "Near you",
+  region: "Worth the trip",
+  anywhere: "Upcoming anywhere",
+};
+
+function ConcertsSkeleton() {
+  return (
+    <Section title="Concerts">
+      <div className="flex animate-pulse flex-col gap-3">
+        <p className="text-xs opacity-60">Finding shows…</p>
+        {[0, 1, 2].map((i) => (
+          <div key={i} className="h-11 rounded-lg bg-current/10" />
+        ))}
+      </div>
+    </Section>
+  );
+}
+
+function ConcertsPlaceholder({ facts }: { facts: SummaryFacts }) {
   const top = facts.topArtists4Weeks.slice(0, 3);
   return (
     <Section title="Concerts">
