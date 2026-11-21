@@ -15,7 +15,7 @@ Users sign in with Spotify via Auth.js. One row per user lives in Postgres (loca
 - `src/proxy.ts`: sends `localhost` visitors to `127.0.0.1`, so Spotify's redirect URI always matches.
 - `src/app/actions.ts`: server actions `connectSpotify` and `logOut`.
 - `src/lib/spotify.ts`: `spotifyFetch(userId, path)` (auto token refresh, returns `null` on 204, throws `SpotifyApiError` with `.status`/`.needsReauth`), plus typed helpers on `spotify.*`: `me`, `topArtists`/`topTracks(userId, range)`, `recentlyPlayed`, `currentlyPlaying`, `savedTracks`, `savedAlbums`, `playlists`, `followedArtists`, `savedShows`. Use these for all Spotify API calls.
-- `src/app/spotify-overview.tsx`: the main page's "everything Spotify gives us" view, with one section per helper.
+- `src/app/spotify-overview.tsx`: the main page's "everything Spotify gives us" view. It reads **stored** data; see [sync.md](sync.md). Pages shouldn't call `spotify.*` live.
 
 ## Usage
 ```ts

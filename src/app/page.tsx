@@ -2,6 +2,8 @@
 import { connection } from "next/server";
 import { Suspense } from "react";
 import { auth } from "@/auth";
+import type { TimeRange } from "@/lib/spotify";
+import { ensureFresh } from "@/lib/vibe";
 import { connectSpotify, logOut } from "./actions";
 import { parseRange, SpotifyOverview } from "./spotify-overview";
 
@@ -65,10 +67,16 @@ async function Account({ searchParams }: { searchParams: PageProps<"/">["searchP
       </header>
 
       <Suspense key={range} fallback={<Skeleton />}>
-        <SpotifyOverview userId={id} range={range} />
+        <SyncedOverview userId={id} range={range} />
       </Suspense>
     </div>
   );
+}
+
+/** Keeps the stored Spotify data fresh, then renders it from the DB. */
+async function SyncedOverview({ userId, range }: { userId: string; range: TimeRange }) {
+  await ensureFresh(userId);
+  return <SpotifyOverview userId={userId} range={range} />;
 }
 
 function Skeleton() {

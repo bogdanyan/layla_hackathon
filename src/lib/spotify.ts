@@ -134,7 +134,12 @@ export const spotify = {
     ),
   /** null when nothing is playing. */
   currentlyPlaying: (userId: string) =>
-    spotifyFetch<{ is_playing: boolean; progress_ms: number | null; item: SpotifyTrack | null } | null>(
+    spotifyFetch<{
+      is_playing: boolean;
+      progress_ms: number | null;
+      currently_playing_type: "track" | "episode" | "ad" | "unknown";
+      item: SpotifyTrack | null;
+    } | null>(
       userId,
       "/me/player/currently-playing",
     ),

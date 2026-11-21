@@ -1,14 +1,13 @@
-/* eslint-disable @next/next/no-img-element -- Spotify CDN images, no need for next/image here */
+import { eq } from "drizzle-orm";
 import Link from "next/link";
 import type { ReactNode } from "react";
-import {
-  spotify,
-  SpotifyApiError,
-  type SpotifyImage,
-  type SpotifyTrack,
-  type TimeRange,
-} from "@/lib/spotify";
-import { connectSpotify } from "./actions";
+import { NowPlaying } from "@/components/now-playing";
+import { Empty, Img, Row, TrackRow } from "@/components/track-row";
+import { db, users, type User } from "@/db";
+import type { TimeRange } from "@/lib/spotify";
+import { getLatestSnapshots, getRecentPlays, type SnapshotKind } from "@/lib/sync";
+import { getLatestVibe } from "@/lib/vibe";
+import { connectSpotify, refreshSpotify } from "./actions";
 
 const RANGES: { value: TimeRange; label: string }[] = [
   { value: "short_term", label: "4 weeks" },
@@ -20,29 +19,42 @@ export function parseRange(value: unknown): TimeRange {
   return RANGES.some((r) => r.value === value) ? (value as TimeRange) : "short_term";
 }
 
-/** Everything the Spotify API gives us for this user, one section per endpoint. */
-export async function SpotifyOverview({ userId, range }: { userId: string; range: TimeRange }) {
-  // Fetch in parallel; each section handles its own failure.
-  const [me, now, recent, topArtists, topTracks, liked, albums, playlists, following, shows] =
-    await Promise.allSettled([
-      spotify.me(userId),
-      spotify.currentlyPlaying(userId),
-      spotify.recentlyPlayed(userId, 50),
-      spotify.topArtists(userId, range, 20),
-      spotify.topTracks(userId, range, 20),
-      spotify.savedTracks(userId, 20),
-      spotify.savedAlbums(userId, 20),
-      spotify.playlists(userId, 20),
-      spotify.followedArtists(userId, 20),
-      spotify.savedShows(userId, 20),
-    ]);
+type SyncError = NonNullable<User["syncErrors"]>[string];
 
-  const needsReauth = [me, now, recent, topArtists, topTracks, liked, albums, playlists, following, shows].some(
-    (r) => r.status === "rejected" && r.reason instanceof SpotifyApiError && r.reason.needsReauth,
-  );
+/** Everything we've synced from Spotify for this user (read from the DB, not live). */
+export async function SpotifyOverview({ userId, range }: { userId: string; range: TimeRange }) {
+  const [[user], snaps, recent, vibe] = await Promise.all([
+    db
+      .select({ lastSyncedAt: users.lastSyncedAt, syncErrors: users.syncErrors, nowPlaying: users.nowPlaying })
+      .from(users)
+      .where(eq(users.id, userId)),
+    getLatestSnapshots(userId),
+    getRecentPlays(userId, 50),
+    getLatestVibe(userId),
+  ]);
+  const errors = user?.syncErrors ?? {};
+  const err = (kind: SnapshotKind | "recent"): SyncError | undefined => errors[kind];
+  const needsReauth = Object.values(errors).some((e) => e.needsReauth);
+
+  const me = snaps.get("profile")?.data;
+  const topArtists = snaps.get(`top_artists:${range}`)?.data;
+  const topTracks = snaps.get(`top_tracks:${range}`)?.data;
+  const liked = snaps.get("liked")?.data;
+  const playlists = snaps.get("playlists")?.data;
+  const albums = snaps.get("albums")?.data;
+  const following = snaps.get("following")?.data;
+  const shows = snaps.get("shows")?.data;
+  const now = user?.nowPlaying;
 
   return (
     <div className="flex flex-col gap-8">
+      <form action={refreshSpotify} className="-mt-4 flex items-center justify-between text-xs opacity-60">
+        <span>{user?.lastSyncedAt ? `Synced ${timeAgo(user.lastSyncedAt)}` : "Not synced yet"}</span>
+        <button type="submit" className="underline underline-offset-2">
+          Refresh
+        </button>
+      </form>
+
       {needsReauth && (
         <form action={connectSpotify} className="rounded-2xl bg-amber-400/15 p-4 text-sm">
           <p>Some sections need extra Spotify permissions.</p>
@@ -52,7 +64,27 @@ export async function SpotifyOverview({ userId, range }: { userId: string; range
         </form>
       )}
 
-      <Section title="Profile" result={me}>
+      {vibe && (
+        <section
+          className="rounded-3xl p-5 text-white"
+          style={{ background: `linear-gradient(135deg, ${vibe.colors.slice(0, 3).join(", ")})` }}
+        >
+          <p className="text-xs uppercase tracking-wider opacity-80">Your vibe</p>
+          <h2 className="mt-1 text-2xl font-bold">
+            {vibe.emoji} {vibe.title}
+          </h2>
+          <p className="mt-2 text-sm opacity-90">{vibe.summary}</p>
+          <div className="mt-3 flex flex-wrap gap-1.5">
+            {vibe.moods.map((m) => (
+              <span key={m} className="rounded-full bg-black/20 px-2.5 py-1 text-xs">
+                {m}
+              </span>
+            ))}
+          </div>
+        </section>
+      )}
+
+      <Section title="Profile" value={me} error={err("profile")}>
         {(u) => (
           <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
             <Field label="Name" value={u.display_name} />
@@ -65,15 +97,10 @@ export async function SpotifyOverview({ userId, range }: { userId: string; range
         )}
       </Section>
 
-      <Section title="Now playing" result={now}>
-        {(n) =>
-          n?.item ? (
-            <TrackRow track={n.item} right={n.is_playing ? "▶︎ playing" : "paused"} />
-          ) : (
-            <Empty>Nothing playing right now.</Empty>
-          )
-        }
-      </Section>
+      <section className="flex flex-col gap-3">
+        <h2 className="text-lg font-semibold">Now playing</h2>
+        <NowPlaying initial={now ?? null} />
+      </section>
 
       <div className="flex flex-col gap-4">
         <div className="flex rounded-full bg-current/10 p-1 text-xs font-medium">
@@ -89,11 +116,11 @@ export async function SpotifyOverview({ userId, range }: { userId: string; range
           ))}
         </div>
 
-        <Section title="Top artists" result={topArtists}>
+        <Section title="Top artists" value={topArtists} error={err(`top_artists:${range}`)}>
           {(p) =>
             p.items.length ? (
               <div className="grid grid-cols-3 gap-3">
-                {p.items.map((a, i) => (
+                {p.items.slice(0, 21).map((a, i) => (
                   <a key={a.id} href={a.external_urls.spotify} target="_blank" className="min-w-0 text-center">
                     <Img images={a.images} className="aspect-square w-full rounded-full" />
                     <p className="mt-1 truncate text-xs">
@@ -108,10 +135,10 @@ export async function SpotifyOverview({ userId, range }: { userId: string; range
           }
         </Section>
 
-        <Section title="Top tracks" result={topTracks}>
+        <Section title="Top tracks" value={topTracks} error={err(`top_tracks:${range}`)}>
           {(p) => (
             <List empty="Not enough listening history yet.">
-              {p.items.map((t, i) => (
+              {p.items.slice(0, 20).map((t, i) => (
                 <TrackRow key={t.id} track={t} rank={i + 1} />
               ))}
             </List>
@@ -119,47 +146,47 @@ export async function SpotifyOverview({ userId, range }: { userId: string; range
         </Section>
       </div>
 
-      <Section title="Recently played" result={recent}>
+      <Section title="Recently played" value={recent} error={err("recent")}>
         {(r) => (
           <List empty="No recent plays.">
-            {r.items.map((it) => (
-              <TrackRow key={it.played_at} track={it.track} right={timeAgo(it.played_at)} />
+            {r.map((it) => (
+              <TrackRow key={it.playedAt.toISOString()} track={it.track} right={timeAgo(it.playedAt)} />
             ))}
           </List>
         )}
       </Section>
 
-      <Section title="Liked songs" result={liked} count={(p) => p.total}>
+      <Section title="Liked songs" value={liked} error={err("liked")} count={(p) => p.total}>
         {(p) => (
           <List empty="No liked songs.">
-            {p.items.map((it) => (
+            {p.items.slice(0, 20).map((it) => (
               <TrackRow key={it.track.id + it.added_at} track={it.track} right={timeAgo(it.added_at)} />
             ))}
           </List>
         )}
       </Section>
 
-      <Section title="Playlists" result={playlists} count={(p) => p.total}>
+      <Section title="Playlists" value={playlists} error={err("playlists")} count={(p) => p.total}>
         {(p) => (
           <List empty="No playlists.">
-            {p.items.filter(Boolean).map((pl) => (
+            {p.items.slice(0, 20).map((pl) => (
               <Row
                 key={pl.id}
                 href={pl.external_urls.spotify}
                 images={pl.images ?? undefined}
                 title={pl.name}
                 subtitle={`by ${pl.owner.display_name ?? "unknown"}`}
-                right={`${pl.tracks?.total ?? pl.items?.total ?? "?"} songs`}
+                right={`${pl.tracks?.total ?? "?"} songs`}
               />
             ))}
           </List>
         )}
       </Section>
 
-      <Section title="Saved albums" result={albums} count={(p) => p.total}>
+      <Section title="Saved albums" value={albums} error={err("albums")} count={(p) => p.total}>
         {(p) => (
           <List empty="No saved albums.">
-            {p.items.map(({ album }) => (
+            {p.items.slice(0, 20).map(({ album }) => (
               <Row
                 key={album.id}
                 href={album.external_urls.spotify}
@@ -173,20 +200,20 @@ export async function SpotifyOverview({ userId, range }: { userId: string; range
         )}
       </Section>
 
-      <Section title="Followed artists" result={following} count={(f) => f.artists.total}>
+      <Section title="Followed artists" value={following} error={err("following")} count={(f) => f.total}>
         {(f) => (
           <List empty="Not following any artists.">
-            {f.artists.items.map((a) => (
+            {f.items.slice(0, 20).map((a) => (
               <Row key={a.id} href={a.external_urls.spotify} images={a.images} title={a.name} round />
             ))}
           </List>
         )}
       </Section>
 
-      <Section title="Saved podcasts" result={shows} count={(p) => p.total}>
+      <Section title="Saved podcasts" value={shows} error={err("shows")} count={(p) => p.total}>
         {(p) => (
           <List empty="No saved podcasts.">
-            {p.items.map(({ show }) => (
+            {p.items.slice(0, 20).map(({ show }) => (
               <Row
                 key={show.id}
                 href={show.external_urls.spotify}
@@ -206,12 +233,14 @@ export async function SpotifyOverview({ userId, range }: { userId: string; range
 
 function Section<T>({
   title,
-  result,
+  value,
+  error,
   count,
   children,
 }: {
   title: string;
-  result: PromiseSettledResult<T>;
+  value: T | undefined;
+  error?: SyncError;
   count?: (value: T) => number;
   children: (value: T) => ReactNode;
 }) {
@@ -219,34 +248,25 @@ function Section<T>({
     <section className="flex flex-col gap-3">
       <h2 className="flex items-baseline justify-between text-lg font-semibold">
         {title}
-        {result.status === "fulfilled" && count && (
-          <span className="text-xs font-normal opacity-50">{count(result.value)} total</span>
-        )}
+        {value !== undefined && count && <span className="text-xs font-normal opacity-50">{count(value)} total</span>}
       </h2>
-      {result.status === "fulfilled" ? (
-        children(result.value)
+      {value !== undefined ? (
+        children(value)
+      ) : error ? (
+        <p className="rounded-xl bg-red-500/10 p-3 text-xs text-red-500">
+          {error.needsReauth
+            ? `Missing permission (${error.status}: ${error.message}). Reconnect Spotify above.`
+            : `Spotify error${error.status ? ` ${error.status}` : ""}: ${error.message}`}
+        </p>
       ) : (
-        <p className="rounded-xl bg-red-500/10 p-3 text-xs text-red-500">{errorText(result.reason)}</p>
+        <Empty>Not synced yet.</Empty>
       )}
     </section>
   );
 }
 
-function errorText(err: unknown) {
-  if (err instanceof SpotifyApiError) {
-    return err.needsReauth
-      ? `Missing permission (${err.status}: ${err.message}). Reconnect Spotify above.`
-      : `Spotify error ${err.status}: ${err.message}`;
-  }
-  return err instanceof Error ? err.message : String(err);
-}
-
 function List({ children, empty }: { children: ReactNode[]; empty: string }) {
   return children.length ? <ul className="flex flex-col gap-1">{children}</ul> : <Empty>{empty}</Empty>;
-}
-
-function Empty({ children }: { children: ReactNode }) {
-  return <p className="text-sm opacity-50">{children}</p>;
 }
 
 function Field({ label, value }: { label: string; value: ReactNode }) {
@@ -259,68 +279,9 @@ function Field({ label, value }: { label: string; value: ReactNode }) {
   );
 }
 
-function TrackRow({ track, rank, right }: { track: SpotifyTrack; rank?: number; right?: string }) {
-  return (
-    <Row
-      href={track.external_urls.spotify}
-      images={track.album.images}
-      rank={rank}
-      title={track.name + (track.explicit ? " 🅴" : "")}
-      subtitle={`${track.artists.map((a) => a.name).join(", ")} · ${track.album.name}`}
-      right={right ?? formatDuration(track.duration_ms)}
-    />
-  );
-}
-
-function Row({
-  href,
-  images,
-  title,
-  subtitle,
-  right,
-  rank,
-  round,
-}: {
-  href: string;
-  images?: SpotifyImage[];
-  title: string;
-  subtitle?: string;
-  right?: string;
-  rank?: number;
-  round?: boolean;
-}) {
-  return (
-    <li>
-      <a href={href} target="_blank" className="flex items-center gap-3 rounded-lg py-1.5 active:bg-current/5">
-        {rank !== undefined && <span className="w-5 shrink-0 text-right text-xs opacity-50">{rank}</span>}
-        <Img images={images} className={`h-11 w-11 shrink-0 ${round ? "rounded-full" : "rounded"}`} />
-        <div className="min-w-0 flex-1">
-          <p className="truncate text-sm">{title}</p>
-          {subtitle && <p className="truncate text-xs opacity-60">{subtitle}</p>}
-        </div>
-        {right && <span className="shrink-0 text-xs opacity-50">{right}</span>}
-      </a>
-    </li>
-  );
-}
-
-function Img({ images, className }: { images?: SpotifyImage[]; className: string }) {
-  // Spotify sorts images largest first: take the smallest one that's still >= 64px.
-  const src = images?.filter((i) => (i.width ?? 640) >= 64).at(-1)?.url ?? images?.[0]?.url;
-  return src ? (
-    <img src={src} alt="" loading="lazy" className={`object-cover ${className}`} />
-  ) : (
-    <div className={`bg-current/10 ${className}`} />
-  );
-}
-
-function formatDuration(ms: number) {
-  const s = Math.round(ms / 1000);
-  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
-}
-
-function timeAgo(iso: string) {
-  const mins = Math.round((Date.now() - new Date(iso).getTime()) / 60000);
+function timeAgo(date: Date | string) {
+  const mins = Math.round((Date.now() - new Date(date).getTime()) / 60000);
+  if (mins < 1) return "just now";
   if (mins < 60) return `${mins}m ago`;
   const hours = Math.round(mins / 60);
   if (hours < 48) return `${hours}h ago`;

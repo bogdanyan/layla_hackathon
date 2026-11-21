@@ -42,6 +42,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           accessToken: account.access_token ?? null,
           refreshToken: account.refresh_token ?? null,
           tokenExpiresAt: account.expires_at ? new Date(account.expires_at * 1000) : null,
+          lastSyncedAt: null, // force a fresh sync after (re)connecting, e.g. to pick up new scopes
         };
         const [user] = await db
           .insert(users)
