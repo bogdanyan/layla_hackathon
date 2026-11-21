@@ -43,3 +43,17 @@ Development is split across four main areas:
 * **Keep it simple:** Always choose the fastest, simplest working solution over complex architecture or abstractions.
 * **Mobile browser first:** Build all layouts and interactions specifically for a phone screen viewport.
 * **Ask before over-engineering:** Keep dependencies minimal and check before introducing heavy infrastructure.
+
+## Project Infrastructure
+
+* **Stack:** Next.js 16 (App Router, TypeScript, `src/`, `cacheComponents` on), Tailwind v4, Auth.js (Spotify), Postgres via Drizzle ORM (local Docker for now, see `docker-compose.yml`; Supabase later).
+* **Next 16 differs from older versions.** Check `node_modules/next/dist/docs/` before using unfamiliar APIs (see `AGENTS.md`).
+* **Layout:** `src/app/layout.tsx` sets a mobile viewport and a `max-w-md` phone-width column.
+* **Run:** `cp .env.example .env.local`, then `docker compose up -d`, then `npm run db:push`, then `npm run dev`. Open **http://127.0.0.1:3000** (not localhost; Spotify requires it).
+
+## Agent Docs
+
+Per-area docs for agents live in `docs/agents/`. **When you build or change an area, add/update its doc** (short: what it is, where the code lives, how to use it) and link it here.
+
+* [LLM wrapper](docs/agents/llm.md) — `src/lib/llm.ts`: `generateText` / `generateJSON` (zod-typed) around Claude. Use for all LLM calls.
+* [Auth + DB](docs/agents/auth-and-db.md) — Spotify login (`src/auth.ts`), `users` table (`src/db/`), `spotifyFetch` with token refresh (`src/lib/spotify.ts`). Use `auth()` for the current user and `spotifyFetch` for all Spotify API calls.
