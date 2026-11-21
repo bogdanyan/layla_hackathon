@@ -57,3 +57,4 @@ Per-area docs for agents live in `docs/agents/`. **When you build or change an a
 
 * [LLM wrapper](docs/agents/llm.md) — `src/lib/llm.ts`: `generateText` / `generateJSON` (zod-typed) around Claude. Use for all LLM calls.
 * [Auth + DB](docs/agents/auth-and-db.md) — Spotify login (`src/auth.ts`), `users` table (`src/db/`), `spotifyFetch` with token refresh (`src/lib/spotify.ts`). Use `auth()` for the current user and `spotifyFetch` for all Spotify API calls.
+* [Location](docs/agents/location.md) — approximate (~1 km) location on `users` (`lat`/`lng`/`locationUpdatedAt`), `<ShareLocation />` button, `getNearbyUsers()` returning distance buckets only. Geolocation needs HTTPS on phones.
