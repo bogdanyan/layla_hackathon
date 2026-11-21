@@ -13,7 +13,7 @@ import { refreshNowPlaying, SYNC_TTL_MS, syncUser } from "./sync";
 export const VIBE_TTL_MS = 6 * 60 * 60 * 1000;
 
 /** Bump when you change the prompt or schema: invalidates every cached summary. */
-const PROMPT_VERSION = 2;
+const PROMPT_VERSION = 3;
 
 // Plain schema on purpose (no regex/min/max): structured outputs support a limited JSON Schema subset.
 // Counts and hex colors are enforced in `clean()` instead.
@@ -22,6 +22,9 @@ export const SummarySchema = z.object({
     title: z.string().describe("2-4 word vibe name, e.g. 'Midnight Indie Drift'"),
     emoji: z.string().describe("exactly one emoji"),
     tagline: z.string().describe("one punchy sentence to the listener, max ~15 words"),
+    description: z
+      .string()
+      .describe("one sentence (max ~20 words) describing the vibe itself: its sound, mood and atmosphere, no stats"),
     moods: z.array(z.string()).describe("3-5 one-word moods"),
     colors: z
       .array(z.string())
@@ -29,12 +32,12 @@ export const SummarySchema = z.object({
   }),
   profile: z.object({
     headline: z.string().describe("listener archetype, 3-6 words, e.g. 'The Loyal Synth Romantic'"),
-    description: z.string().describe("2-3 sentences in second person explaining their taste, naming real artists"),
+    description: z.string().describe("1-2 short sentences (max ~30 words total) in second person, naming 2-3 real artists"),
     traits: z
       .array(
         z.object({
           label: z.string().describe("1-3 words"),
-          explanation: z.string().describe("one sentence grounded in the data"),
+          explanation: z.string().describe("max ~10 words, grounded in the data"),
         }),
       )
       .describe("exactly 3 traits"),
@@ -43,11 +46,11 @@ export const SummarySchema = z.object({
     .array(
       z.object({
         emoji: z.string().describe("one emoji"),
-        title: z.string().describe("3-6 words"),
-        detail: z.string().describe("one sentence citing specific names/numbers from the data"),
+        title: z.string().describe("2-5 words"),
+        detail: z.string().describe("max ~12 words, citing a specific name or number from the data"),
       }),
     )
-    .describe("2-4 notable recent trends"),
+    .describe("2-3 most notable recent trends"),
 });
 export type Summary = z.infer<typeof SummarySchema> & { createdAt: Date };
 
@@ -58,6 +61,7 @@ Rules:
 - Use only the facts given. Every artist, track and number you mention must appear in the input.
   You may infer styles/genres from artist names you know, but never invent stats, concerts or events.
 - Talk to the listener as "you": warm, witty and specific. No generic filler like "eclectic taste".
+- Be concise: respect the word limits in the schema. Short and punchy beats complete.
 - Play counts come from history we recorded starting at recordedHistoryStarts. If that is within the
   last 7 days, last7Days is incomplete: don't call it low listening. previous7Days = null means no
   data to compare, so don't claim week-over-week changes.
@@ -79,7 +83,7 @@ function clean(s: z.infer<typeof SummarySchema>): z.infer<typeof SummarySchema> 
       colors: [...colors, ...FALLBACK_COLORS].slice(0, 3),
     },
     profile: { ...s.profile, traits: s.profile.traits.slice(0, 3) },
-    trends: s.trends.slice(0, 4),
+    trends: s.trends.slice(0, 3),
   };
 }
 

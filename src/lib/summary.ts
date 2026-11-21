@@ -75,8 +75,25 @@ export async function getSummaryFacts(userId: string) {
   const longTracks = snaps.get("top_tracks:long_term")?.data.items ?? [];
   const shortTracks = snaps.get("top_tracks:short_term")?.data.items ?? [];
 
+  // "Into right now": Spotify's 4-week top tracks, one per artist (so it isn't 3 songs by the same act),
+  // falling back to this week's most-played tracks.
+  const seenArtists = new Set<string>();
+  const intoRightNow = (
+    shortTracks.length
+      ? shortTracks
+          .filter((t) => {
+            const artist = t.artists[0]?.id ?? t.id;
+            if (seenArtists.has(artist)) return false;
+            seenArtists.add(artist);
+            return true;
+          })
+          .map((t) => ({ id: t.id, name: t.name, artist: t.artists[0]?.name ?? "", imageUrl: t.album.images[0]?.url ?? null }))
+      : thisWeek.topTracks.map((t) => ({ id: t.trackId, name: t.name, artist: t.artist, imageUrl: t.imageUrl }))
+  ).slice(0, 3);
+
   return {
     timezone: meta?.timezone ?? "UTC",
+    intoRightNow,
     /** When our recorded play history starts. Week stats before this date are incomplete. */
     trackingSince: meta?.trackingSince ? new Date(meta.trackingSince) : null,
     thisWeek: {

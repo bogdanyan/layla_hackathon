@@ -10,9 +10,9 @@
 ## LLM output (`src/lib/vibe.ts`)
 `SummarySchema` (zod, used with `generateJSON` from `src/lib/llm.ts`):
 ```
-vibe:    { title, emoji, tagline, moods[], colors[3 hex] }
+vibe:    { title, emoji, tagline, description, moods[], colors[3 hex] }
 profile: { headline, description, traits[3]: { label, explanation } }
-trends:  [{ emoji, title, detail }]   // 2–4
+trends:  [{ emoji, title, detail }]   // 2–3, detail ≤12 words
 ```
 The schema is kept plain because structured outputs support only a JSON Schema subset. Counts and hex colors are enforced afterwards in `clean()`.
 
@@ -23,13 +23,25 @@ The schema is kept plain because structured outputs support only a JSON Schema s
 - Old names `refreshVibe` / `getLatestVibe` are kept as aliases.
 
 ## Page (`src/app/summary.tsx`)
-- Deterministic sections render instantly from `getSummaryFacts`.
-- Two LLM sections (hero + profile, and trends) share one `cache()`d `getOrCreateSummary` call.
+The page is a stack of **4 shareable cards**, each with a Share button and a matching story image, followed by the Concerts placeholder:
+
+| Card | Content | Source |
+|---|---|---|
+| `vibe` | emoji, title, tagline, one-sentence vibe description, moods, **Into right now** (Spotify 4-week top tracks, one per artist) | LLM + facts |
+| `week` | minutes, plays, peak time, top artist, **On repeat** (this week's most-played) | facts only, so it renders instantly |
+| `listener` | headline, short description (≤30 words), 3 short traits | LLM |
+| `trends` | 2–3 short trends | LLM |
+
+- The LLM cards are in `<Suspense>` and share one `cache()`d `getOrCreateSummary` call. The week card uses the cached vibe colors if available.
+- `src/lib/cards.ts` holds `CARDS`, the labels, `cardGradient(colors, card)` (each card gets its own variation of the 3 vibe colors) and `albumArt(url)` (asks Spotify for 300 px art; we store 64 px). Web cards and story images share these, so stories look like the app.
 - `ensureFresh` keeps the synced data fresh (see [sync.md](sync.md)).
 
 ## Share to story
-- `GET /api/story` (`src/app/api/story/route.tsx`): a 1080×1920 PNG via `next/og` `ImageResponse`. Flexbox only (every multi-child `div` needs `display: flex`); emoji render via twemoji. Returns 404 until a summary exists.
-- `<ShareStory />` (`src/components/share-story.tsx`) prefetches the PNG on mount, because iOS only allows `navigator.share` right after the tap. It opens the native share sheet with the file (Instagram Stories, WhatsApp…), or downloads the PNG where file sharing isn't supported (desktop, or plain http on phones).
+- `GET /api/story?card=vibe|week|listener|trends` (`src/app/api/story/route.tsx`) returns a 1080×1920 PNG via `next/og` `ImageResponse`:
+  - Fonts are Geist Regular + Bold from `assets/fonts/` (next/og can't use next/font or woff2).
+  - **Flexbox only:** every multi-child element needs `display: flex`, and **don't use React fragments**, because satori lays their children out as a row. Use the `Col` wrapper.
+  - `week` works without a summary; the others return 404 until one exists.
+- `<ShareStory card version title />` (`src/components/share-story.tsx`) prefetches its PNG when the card scrolls near the viewport, because iOS only allows `navigator.share` right after the tap. It opens the native share sheet with the file (Instagram Stories, WhatsApp…), or downloads the PNG where file sharing isn't supported (desktop, or plain http on phones).
 
 ## Timezone
 `users.timezone` is set by `<TimezoneSync />`, which calls the `setTimezone` server action in `src/app/actions.ts` with the browser's IANA zone. The first time it's set, the summary is regenerated so the "peak time" uses local hours. `getListeningStats` groups by hour in that timezone (UTC when unknown).
