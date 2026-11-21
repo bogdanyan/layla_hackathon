@@ -28,6 +28,7 @@ const recent = await spotify.recentlyPlayed(userId!, 50);   // or spotifyFetch(u
 ```
 
 ## Next 16 gotchas
+- `next.config.ts` has `allowedDevOrigins: ["127.0.0.1"]`. Without it, the dev server blocks its HMR connection for 127.0.0.1 and **client components never start**: no polling, no share button, no effects. Add your tunnel host there too if you use one (e.g. ngrok).
 - `cacheComponents` is on, so any component calling `auth()` must sit inside `<Suspense>` and call `await connection()` first. Auth.js generates random values during the call, which breaks prerendering. See `Account` in `src/app/page.tsx`.
 - Scopes are listed in `SPOTIFY_SCOPES` (`src/auth.ts`). After adding a scope, users must reconnect: the endpoint returns 401/403, `needsReauth` is true, and the page shows a Reconnect button.
 - Spotify no longer returns artist `genres`/`popularity`/`followers` or track `popularity` for new apps, and audio-features/recommendations/related-artists endpoints are unavailable. Don't build on them.

@@ -270,10 +270,15 @@ export async function getRecentPlays(userId: string, limit = 50) {
   }));
 }
 
-/** Aggregates over stored plays in the last `days` days: what the vibe and trends are built from. */
-export async function getListeningStats(userId: string, days = 7) {
-  const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
-  const where = and(eq(plays.userId, userId), gte(plays.playedAt, since));
+/**
+ * Aggregates over stored plays: what the summary and trends are built from.
+ * `range` is either "last N days" or an explicit { from, to } window. Hours are in the user's timezone.
+ */
+export async function getListeningStats(userId: string, range: number | { from: Date; to: Date } = 7) {
+  const { from, to } =
+    typeof range === "number" ? { from: new Date(Date.now() - range * 24 * 60 * 60 * 1000), to: new Date() } : range;
+  const where = and(eq(plays.userId, userId), gte(plays.playedAt, from), lt(plays.playedAt, to));
+  const tz = sql`coalesce((select ${users.timezone} from ${users} where ${users.id} = ${userId}), 'UTC')`;
 
   const [topArtists, topTracks, byHour, [totals]] = await Promise.all([
     db
@@ -281,23 +286,24 @@ export async function getListeningStats(userId: string, days = 7) {
         select a.name, count(*)::int as plays
         from ${plays}, unnest(${plays.artistNames}) as a(name)
         where ${where}
-        group by a.name order by plays desc limit 15`)
+        group by a.name order by plays desc, a.name limit 15`)
       .then((rows) => [...rows]),
     db
       .select({
+        trackId: plays.trackId,
         name: plays.trackName,
         artist: sql<string>`${plays.artistNames}[1]`,
+        imageUrl: sql<string | null>`max(${plays.imageUrl})`,
         plays: sql<number>`count(*)::int`,
       })
       .from(plays)
       .where(where)
       .groupBy(plays.trackId, plays.trackName, sql`${plays.artistNames}[1]`)
-      .orderBy(sql`3 desc`)
+      .orderBy(sql`5 desc`, plays.trackName)
       .limit(15),
     db
       .select({
-        // UTC hour: we don't know the user's timezone yet.
-        hour: sql<number>`extract(hour from ${plays.playedAt} at time zone 'UTC')::int`,
+        hour: sql<number>`extract(hour from ${plays.playedAt} at time zone ${tz})::int`,
         plays: sql<number>`count(*)::int`,
       })
       .from(plays)
@@ -312,5 +318,5 @@ export async function getListeningStats(userId: string, days = 7) {
       .from(plays)
       .where(where),
   ]);
-  return { days, totalPlays: totals.plays, totalMinutes: totals.minutes, topArtists, topTracks, byHour };
+  return { from, to, totalPlays: totals.plays, totalMinutes: totals.minutes, topArtists, topTracks, byHour };
 }

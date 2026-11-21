@@ -20,7 +20,7 @@ export async function GET(req: Request) {
     try {
       const synced = await syncUser(id);
       const vibe = await refreshVibe(id);
-      results.push({ id, synced, vibe: vibe?.title ?? null });
+      results.push({ id, synced, vibe: vibe?.vibe.title ?? null });
     } catch (e) {
       results.push({ id, error: e instanceof Error ? e.message : String(e) });
     }

@@ -25,6 +25,8 @@ export const users = pgTable("users", {
   lat: doublePrecision("lat"),
   lng: doublePrecision("lng"),
   locationUpdatedAt: timestamp("location_updated_at", { withTimezone: true }),
+  // IANA timezone from the browser (e.g. "Europe/Berlin"), for local-time stats. null = UTC.
+  timezone: text("timezone"),
   // Spotify sync state. See docs/agents/sync.md
   lastSyncedAt: timestamp("last_synced_at", { withTimezone: true }),
   syncErrors: jsonb("sync_errors").$type<Record<string, { status?: number; message: string; needsReauth?: boolean }>>(),

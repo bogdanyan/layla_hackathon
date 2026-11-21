@@ -4,9 +4,9 @@ import type { ReactNode } from "react";
 import { NowPlaying } from "@/components/now-playing";
 import { Empty, Img, Row, TrackRow } from "@/components/track-row";
 import { db, users, type User } from "@/db";
+import { timeAgo } from "@/lib/format";
 import type { TimeRange } from "@/lib/spotify";
 import { getLatestSnapshots, getRecentPlays, type SnapshotKind } from "@/lib/sync";
-import { getLatestVibe } from "@/lib/vibe";
 import { connectSpotify, refreshSpotify } from "./actions";
 
 const RANGES: { value: TimeRange; label: string }[] = [
@@ -23,14 +23,13 @@ type SyncError = NonNullable<User["syncErrors"]>[string];
 
 /** Everything we've synced from Spotify for this user (read from the DB, not live). */
 export async function SpotifyOverview({ userId, range }: { userId: string; range: TimeRange }) {
-  const [[user], snaps, recent, vibe] = await Promise.all([
+  const [[user], snaps, recent] = await Promise.all([
     db
       .select({ lastSyncedAt: users.lastSyncedAt, syncErrors: users.syncErrors, nowPlaying: users.nowPlaying })
       .from(users)
       .where(eq(users.id, userId)),
     getLatestSnapshots(userId),
     getRecentPlays(userId, 50),
-    getLatestVibe(userId),
   ]);
   const errors = user?.syncErrors ?? {};
   const err = (kind: SnapshotKind | "recent"): SyncError | undefined => errors[kind];
@@ -64,26 +63,6 @@ export async function SpotifyOverview({ userId, range }: { userId: string; range
         </form>
       )}
 
-      {vibe && (
-        <section
-          className="rounded-3xl p-5 text-white"
-          style={{ background: `linear-gradient(135deg, ${vibe.colors.slice(0, 3).join(", ")})` }}
-        >
-          <p className="text-xs uppercase tracking-wider opacity-80">Your vibe</p>
-          <h2 className="mt-1 text-2xl font-bold">
-            {vibe.emoji} {vibe.title}
-          </h2>
-          <p className="mt-2 text-sm opacity-90">{vibe.summary}</p>
-          <div className="mt-3 flex flex-wrap gap-1.5">
-            {vibe.moods.map((m) => (
-              <span key={m} className="rounded-full bg-black/20 px-2.5 py-1 text-xs">
-                {m}
-              </span>
-            ))}
-          </div>
-        </section>
-      )}
-
       <Section title="Profile" value={me} error={err("profile")}>
         {(u) => (
           <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
@@ -107,7 +86,7 @@ export async function SpotifyOverview({ userId, range }: { userId: string; range
           {RANGES.map((r) => (
             <Link
               key={r.value}
-              href={`/?range=${r.value}`}
+              href={`/data?range=${r.value}`}
               scroll={false}
               className={`flex-1 rounded-full py-2 text-center ${r.value === range ? "bg-foreground text-background" : "opacity-70"}`}
             >
@@ -277,13 +256,4 @@ function Field({ label, value }: { label: string; value: ReactNode }) {
       <dd className="truncate">{value}</dd>
     </div>
   );
-}
-
-function timeAgo(date: Date | string) {
-  const mins = Math.round((Date.now() - new Date(date).getTime()) / 60000);
-  if (mins < 1) return "just now";
-  if (mins < 60) return `${mins}m ago`;
-  const hours = Math.round(mins / 60);
-  if (hours < 48) return `${hours}h ago`;
-  return `${Math.round(hours / 24)}d ago`;
 }

@@ -5,7 +5,7 @@ Spotify data is copied into Postgres periodically. Pages and the LLM read from t
 ## Tables (`src/db/schema.ts`)
 - `plays`: one row per play (flat columns: `trackName`, `artistNames[]`, `playedAt`…). Unique on (`userId`, `playedAt`), so re-syncs never duplicate rows. Query it with SQL for trends.
 - `spotify_snapshots`: timestamped JSON copies of `profile`, `top_artists:<range>`, `top_tracks:<range>` (ranges `short_term|medium_term|long_term`), `liked`, `playlists`, `albums`, `following`, `shows`. A new row is written **only when the content hash changes** (image URLs are ignored). The latest row per kind is the current state, and older rows form a history.
-- `vibes`: generated vibe JSON plus an `inputHash`. The latest row is the current vibe.
+- `vibes`: the generated summary JSON (`SummarySchema`, see [summary.md](summary.md)) plus an `inputHash`. The latest valid row is the current one.
 - `users`: `lastSyncedAt`, `syncErrors` (per kind, with `needsReauth`), `nowPlaying` (trimmed track or null), `nowPlayingAt`.
 
 ## Code
@@ -14,9 +14,8 @@ Spotify data is copied into Postgres periodically. Pages and the LLM read from t
   - `refreshNowPlaying(userId)`: one call, at most once per `NOW_PLAYING_TTL_MS` (25 s).
   - Reads: `getLatestSnapshots(userId).get(kind)` returns `{ data, fetchedAt }` (typed per kind); `getRecentPlays(userId)`; `getListeningStats(userId, days)` returns top artists/tracks by plays, plays by hour (UTC), and totals.
 - `src/lib/vibe.ts`
-  - `getLatestVibe(userId)`: DB only. Use it in pages.
-  - `refreshVibe(userId, { force })`: builds a compact input from the DB and hashes it. It calls the LLM (`generateJSON`) only if the hash changed **and** the last vibe is older than `VIBE_TTL_MS` (6 h). It's a no-op without `ANTHROPIC_API_KEY`. The prompt and `VibeSchema` live here, free for the LLM owner to change.
-  - `ensureFresh(userId)`: call it while rendering any page showing a user's Spotify data. The first sync runs inline; after that, stale data is synced and the vibe refreshed in `after()`, so pages never wait on the LLM.
+  - The LLM summary (vibe, profile, trends). See [summary.md](summary.md): `getOrCreateSummary`, `refreshSummary`, `getLatestSummary` (old names `refreshVibe`/`getLatestVibe` still work).
+  - `ensureFresh(userId)`: call it while rendering any page showing a user's Spotify data. The first sync runs inline; after that, stale data is synced and the summary refreshed in `after()`.
 - `src/app/actions.ts`: `refreshSpotify()`, the "Refresh" button (forced sync).
 - `src/app/api/now-playing/route.ts`: `GET` returns the current user's `{ nowPlaying }`, refreshing it from Spotify if it's older than the TTL.
 - `src/components/now-playing.tsx`: `<NowPlaying initial={...} />` client component. It polls that route every 30 s while the tab is visible, pauses when hidden, and refetches on return. Reuse this pattern for live data on the Listening screen.
@@ -30,10 +29,10 @@ Spotify data is copied into Postgres periodically. Pages and the LLM read from t
 ## Usage
 ```ts
 import { getLatestSnapshots, getListeningStats, getRecentPlays } from "@/lib/sync";
-import { ensureFresh, getLatestVibe } from "@/lib/vibe";
+import { ensureFresh, getLatestSummary } from "@/lib/vibe";
 
 await ensureFresh(userId);                               // in a page, inside <Suspense> after connection()
 const top = (await getLatestSnapshots(userId)).get("top_artists:short_term")?.data.items;
 const stats = await getListeningStats(userId, 7);
-const vibe = await getLatestVibe(userId);                // { title, emoji, summary, moods, colors, createdAt } | null
+const summary = await getLatestSummary(userId);          // { vibe, profile, trends, createdAt } | null
 ```
