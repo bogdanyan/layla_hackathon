@@ -97,7 +97,7 @@ async function main() {
       .insert(users)
       .values({
         spotifyId: `${PREFIX}${name.toLowerCase()}`,
-        displayName: name,
+        displayName: `${name} (DEMO)`,
         imageUrl: `https://i.pravatar.cc/150?img=${i + 10}`,
         lat: round(lat + dLat),
         lng: round(lng + dLng),

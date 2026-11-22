@@ -121,6 +121,7 @@ function Listener({ p, match }: { p: NearbyListener; match?: TasteMatch }) {
         {p.status === "playing" && <span className="h-2 w-2 animate-pulse rounded-full bg-green-500" />}
         {match && <MatchPill score={match.score} />}
         <span className="shrink-0 text-xs opacity-50">{p.distanceLabel}</span>
+        <SayHi userId={p.userId} />
       </div>
       {p.track ? (
         <ul className="mt-1">
@@ -133,6 +134,18 @@ function Listener({ p, match }: { p: NearbyListener; match?: TasteMatch }) {
         <p className="mt-1 truncate text-xs opacity-60">You both: {match.shared.join(", ")}</p>
       )}
     </li>
+  );
+}
+
+function SayHi({ userId }: { userId: string }) {
+  return (
+    <Link
+      href={`/chat/${userId}`}
+      className="shrink-0 rounded-full border border-current/20 px-2 py-0.5 text-[11px] font-medium active:bg-current/10"
+      aria-label="Chat"
+    >
+      💬 Hi
+    </Link>
   );
 }
 
@@ -168,9 +181,12 @@ async function TasteTwins({ userId }: { userId: string }) {
               </div>
               <p className="truncate text-sm font-medium">{m.displayName ?? "Spotify user"}</p>
               <p className="line-clamp-2 text-xs opacity-60">You both: {m.shared.join(", ")}</p>
-              {distances.get(m.userId) && (
-                <span className="mt-auto text-[11px] opacity-50">📍 {distances.get(m.userId)}</span>
-              )}
+              <div className="mt-auto flex items-center justify-between gap-1">
+                <span className="truncate text-[11px] opacity-50">
+                  {distances.get(m.userId) ? `📍 ${distances.get(m.userId)}` : ""}
+                </span>
+                <SayHi userId={m.userId} />
+              </div>
             </li>
           ))}
         </ul>

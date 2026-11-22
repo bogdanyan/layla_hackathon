@@ -114,3 +114,49 @@ export const vibes = pgTable(
   },
   (t) => [index().on(t.userId, t.createdAt.desc())],
 );
+
+/**
+ * One chat per pair of users (either direction). Messaging is only allowed once `status` is
+ * "accepted". `note` is the optional intro sent with the request. See docs/agents/chat.md
+ */
+export const chats = pgTable(
+  "chats",
+  {
+    id: serial("id").primaryKey(),
+    requesterId: uuid("requester_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    recipientId: uuid("recipient_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    status: text("status").$type<ChatStatus>().notNull().default("pending"),
+    note: text("note"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow()
+      .$onUpdate(() => new Date()),
+  },
+  (t) => [unique().on(t.requesterId, t.recipientId), index().on(t.recipientId)],
+);
+
+export type ChatStatus = "pending" | "accepted" | "declined";
+export type Chat = typeof chats.$inferSelect;
+
+export const messages = pgTable(
+  "messages",
+  {
+    id: serial("id").primaryKey(),
+    chatId: integer("chat_id")
+      .notNull()
+      .references(() => chats.id, { onDelete: "cascade" }),
+    senderId: uuid("sender_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    body: text("body").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index().on(t.chatId, t.createdAt)],
+);
+
+export type Message = typeof messages.$inferSelect;

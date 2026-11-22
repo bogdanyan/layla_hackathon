@@ -2,20 +2,37 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { Suspense } from "react";
 
 const TABS = [
   { href: "/", label: "Vibe", icon: "✦" },
   { href: "/nearby", label: "Nearby", icon: "📍" },
+  { href: "/chat", label: "Chat", icon: "💬" },
 ] as const;
 
-/** Fixed bottom tab bar for logged-in screens. Pages using it need bottom padding (pb-24). */
+/**
+ * Fixed bottom tab bar for logged-in screens. Pages using it need bottom padding (pb-24).
+ * usePathname() suspends on dynamic routes like /chat/[userId] (cacheComponents), so it is
+ * wrapped in Suspense here; the fallback is the same bar with no active tab.
+ */
 export function BottomNav() {
-  const pathname = usePathname();
+  return (
+    <Suspense fallback={<Tabs pathname={null} />}>
+      <ActiveTabs />
+    </Suspense>
+  );
+}
+
+function ActiveTabs() {
+  return <Tabs pathname={usePathname()} />;
+}
+
+function Tabs({ pathname }: { pathname: string | null }) {
   return (
     <nav className="fixed inset-x-0 bottom-0 z-10 mx-auto w-full max-w-md border-t border-current/10 bg-background/90 pb-[env(safe-area-inset-bottom)] backdrop-blur">
       <ul className="flex">
         {TABS.map((t) => {
-          const active = t.href === "/" ? pathname === "/" : pathname.startsWith(t.href);
+          const active = pathname !== null && (t.href === "/" ? pathname === "/" : pathname.startsWith(t.href));
           return (
             <li key={t.href} className="flex-1">
               <Link
