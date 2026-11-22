@@ -13,5 +13,5 @@ Vercel builds and deploys whatever is pushed to `main` on GitHub. If the site sh
 ## Code bits that exist for Vercel
 - `vercel.json`: `"framework": "nextjs"` (the project was created when the repo had no app, so Vercel guessed "Other" and looked for `public/`), plus a daily cron calls `/api/cron/sync`. Vercel sends `Authorization: Bearer $CRON_SECRET` automatically. The Hobby plan only allows daily crons; pages also sync on visit through `ensureFresh`.
 - `next.config.ts`: `outputFileTracingIncludes` bundles `assets/fonts` for `/api/story`.
-- `src/db/index.ts`: the connection pool is reused across warm invocations and limited to 3 connections on Vercel.
+- `src/db/index.ts`: `max_pipeline: 1` is required for the Supabase pooler. Without it, parallel queries (e.g. the Spotify sync) hang forever. There is also a 20 s `query_timeout`, and the pool is reused across warm invocations and capped at 5 connections on Vercel.
 - `src/app/api/auth/[...nextauth]/route.ts`: when `AUTH_URL` is set, Auth.js uses it. Otherwise it rebuilds the callback URL from the Host header.
