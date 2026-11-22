@@ -11,7 +11,7 @@ Vercel builds and deploys whatever is pushed to `main` on GitHub. If the site sh
 3. **Schema and demo data** on Supabase: put the Supabase URL in `.env.local` as `DATABASE_URL_PROD`, then run `npm run db:push:prod`, and `npm run db:seed-demo:prod` if you want demo users (pass `-- <lat> <lng>` if nobody in prod has shared a location yet). **Run `db:push:prod` after every schema change** that gets pushed to `main`; Vercel does not migrate the DB.
 
 ## Code bits that exist for Vercel
-- `vercel.json`: a daily cron calls `/api/cron/sync`. Vercel sends `Authorization: Bearer $CRON_SECRET` automatically. The Hobby plan only allows daily crons; pages also sync on visit through `ensureFresh`.
+- `vercel.json`: `"framework": "nextjs"` (the project was created when the repo had no app, so Vercel guessed "Other" and looked for `public/`), plus a daily cron calls `/api/cron/sync`. Vercel sends `Authorization: Bearer $CRON_SECRET` automatically. The Hobby plan only allows daily crons; pages also sync on visit through `ensureFresh`.
 - `next.config.ts`: `outputFileTracingIncludes` bundles `assets/fonts` for `/api/story`.
 - `src/db/index.ts`: the connection pool is reused across warm invocations and limited to 3 connections on Vercel.
 - `src/app/api/auth/[...nextauth]/route.ts`: when `AUTH_URL` is set, Auth.js uses it. Otherwise it rebuilds the callback URL from the Host header.
