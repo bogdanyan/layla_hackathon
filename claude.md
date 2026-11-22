@@ -64,3 +64,4 @@ Per-area docs for agents live in `docs/agents/`. **When you build or change an a
 * [Listening screen](docs/agents/listening.md): `/nearby` shows people within 1/5/10/25 km and what they're playing now or recently, via `getNearbyListening` (`src/lib/nearby.ts`). Includes the `<BottomNav />` tab bar and `<AutoRefresh />`.
 * [Taste matching](docs/agents/taste.md): `getTasteMatches(userId)` in `src/lib/taste.ts` ranks everyone by shared artists (cosine over top-artist snapshots plus recent plays). Shown on `/nearby` as "Your taste twins" and match % pills.
 * [Chat](docs/agents/chat.md): request-gated 1:1 chat. `chats` and `messages` tables, logic in `src/lib/chat.ts`, Chat tab `/chat`, threads `/chat/[userId]`. Demo users auto-accept and send canned replies. Updates by polling.
+* [Deploy](docs/agents/deploy.md): Vercel (deploys `main`) + Supabase. Env vars, the Spotify redirect URI, the daily cron in `vercel.json`, and pushing the schema to Supabase.

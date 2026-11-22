@@ -9,7 +9,9 @@
     "lint": "eslint",
     "db:push": "drizzle-kit push",
     "db:studio": "drizzle-kit studio",
-    "db:seed-demo": "tsx --env-file=.env.local scripts/seed-demo.ts"
+    "db:seed-demo": "tsx --env-file=.env.local scripts/seed-demo.ts",
+    "db:push:prod": "DB_TARGET=prod drizzle-kit push",
+    "db:seed-demo:prod": "tsx --env-file=.env.local --import ./scripts/use-prod-db.mjs scripts/seed-demo.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.12.0",
